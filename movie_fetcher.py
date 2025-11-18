@@ -44,8 +44,29 @@ def fetch_popular_movies(num_pages=5):
     movies = []
 
     for page in range(1,num_pages+1):
-        print('Fetching page {page}')
         url = f"{TMDB_BASE_URL}/movie/popular"
+        params = {
+            'api_key': TMDB_API_KEY,
+            'page': page,
+            'language': 'en-US'
+        }
+
+        response = requests.get(url, params=params)
+
+        if response.status_code == 200:
+            data = response.json()
+            movies.extend(data['results'])
+        else:
+            print(f"Error fetching page {page}: {response.status_code}")
+    
+    print(f"Fetched {len(movies)} movies from TMDB")
+    return movies
+
+def fetch_top_movies(num_pages=5):
+    movies = []
+
+    for page in range(1,num_pages+1):
+        url = f"{TMDB_BASE_URL}/movie/top_rated"
         params = {
             'api_key': TMDB_API_KEY,
             'page': page,
@@ -66,16 +87,19 @@ def fetch_popular_movies(num_pages=5):
 
 
 def generate_embedding(title,overview,genre_names):
-    parts =[title]
-
+    parts = [title]
+    
     if genre_names:
-        parts.append(f"Genre: {', '.join(genre_names)}")
+        genre_text = ', '.join(genre_names)
+        # Repeat genres 3 times to increase weight
+        parts.append(f"Genres: {genre_text}")
+        parts.append(f"Categories: {genre_text}")
+        parts.append(f"Type: {genre_text}")
     
     if overview:
         parts.append(overview)
     
     text = ". ".join(parts)
-
     embedding = model.encode(text)
     return embedding.tolist()
 
@@ -97,8 +121,8 @@ def insert_movies_to_db(movies):
             vote_average = movie.get('vote_average', 0)
             genre_ids = movie.get('genre_ids', [])
 
-            if not overview:
-                skipped+=1
+            if not overview or vote_average < 6.0:
+                skipped += 1
                 continue
             
             genre_names = get_genre_names(genre_ids)
@@ -147,7 +171,15 @@ def main():
         
     fetch_genre_list()
 
-    movies = fetch_popular_movies(num_pages=5)
+    movies = fetch_popular_movies(num_pages=350)
+
+    if not movies:
+        print("❌ No movies fetched")
+        return
+
+    insert_movies_to_db(movies)
+
+    movies = fetch_top_movies(num_pages=350)
 
     if not movies:
         print("❌ No movies fetched")
